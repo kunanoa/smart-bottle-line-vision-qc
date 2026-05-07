@@ -1,0 +1,209 @@
+# ============================================================
+# Smart Bottle Line Vision QC v0.12 - .gitignore
+# (PyTorch · Anomalib · Ultralytics YOLO · Basler Pylon)
+# ============================================================
+
+# ────────────────────────────────────────────────────────────
+# 🔐 환경 변수 / 시크릿
+# ────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.key
+secrets.toml
+
+!.env.example
+
+
+# ────────────────────────────────────────────────────────────
+# 🧠 모델 가중치 (용량 매우 큼, 레포에 올리면 안 됨)
+#    학습된 가중치는 별도 릴리스/스토리지로 관리
+# ────────────────────────────────────────────────────────────
+# PyTorch / 일반
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Anomalib / Lightning 체크포인트
+*.ckpt
+lightning_logs/
+
+# YOLO 가중치
+yolov8*.pt
+yolov11*.pt
+runs/
+
+# ONNX / TensorRT / OpenVINO 변환물
+*.onnx
+*.engine
+*.trt
+*.plan
+*.xml
+*.bin
+
+
+# ────────────────────────────────────────────────────────────
+# 📸 이미지 / 영상 데이터셋 (용량 큼, 라이선스 이슈 가능)
+#    구조만 살리고 실제 데이터는 무시
+#    → 데모용 샘플 몇 장만 sample/ 폴더에 두는 걸 권장
+# ────────────────────────────────────────────────────────────
+data/station1/normal/*
+data/station1/abnormal/*
+data/station1/test/*
+!data/station1/normal/.gitkeep
+!data/station1/abnormal/.gitkeep
+!data/station1/test/.gitkeep
+!data/**/sample/
+
+data/station2/*
+!data/station2/sample/
+!data/station2/.gitkeep
+
+# 이미지 / 영상 포맷 일괄 무시 (sample 폴더 외)
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.tif
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# 단, 문서·README용 이미지는 올림
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/**/*.jpeg
+!docs/**/*.gif
+!**/sample/*
+
+
+# ────────────────────────────────────────────────────────────
+# 🏷 라벨링 데이터 (YOLO 학습용)
+#    Roboflow / LabelImg / CVAT 출력물 등은 별도 관리
+# ────────────────────────────────────────────────────────────
+labels/
+*.cache
+
+
+# ────────────────────────────────────────────────────────────
+# 📊 학습 / 추론 결과물
+# ────────────────────────────────────────────────────────────
+# Anomalib 출력
+results/
+outputs/
+predictions/
+
+# Ultralytics YOLO 출력
+runs/detect/
+runs/train/
+runs/val/
+
+# TensorBoard
+events.out.tfevents.*
+tb_logs/
+
+# Weights & Biases
+wandb/
+
+# MLflow
+mlruns/
+
+
+# ────────────────────────────────────────────────────────────
+# 📷 Basler Pylon SDK 관련
+#    카메라 캘리브레이션·설정 파일은 환경 의존적
+# ────────────────────────────────────────────────────────────
+*.pfs
+camera_config*.json
+calibration/
+
+
+# ────────────────────────────────────────────────────────────
+# 🐍 Python
+# ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+coverage.xml
+
+.mypy_cache/
+.pyre/
+.pytype/
+
+
+# ────────────────────────────────────────────────────────────
+# 🌱 가상환경
+# ────────────────────────────────────────────────────────────
+venv/
+env/
+ENV/
+.venv/
+.env/
+conda-meta/
+
+
+# ────────────────────────────────────────────────────────────
+# 📒 Jupyter / IPython
+# ────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+
+# ────────────────────────────────────────────────────────────
+# 📋 로그 / 임시 파일
+# ────────────────────────────────────────────────────────────
+*.log
+logs/
+*.tmp
+*.bak
+*.swp
+*.swo
+
+
+# ────────────────────────────────────────────────────────────
+# 💻 IDE / 에디터
+# ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+
+# ────────────────────────────────────────────────────────────
+# 🖥 운영체제
+# ────────────────────────────────────────────────────────────
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+.Trash-*

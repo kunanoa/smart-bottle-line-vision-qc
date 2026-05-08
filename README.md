@@ -270,7 +270,7 @@ data/station1/
 | `label` | 라벨 |
 | `fill_level` | 내용물 충진 라인 |
 
-> 일지 기준 OK/NG 판정 로직의 입력은 **`cap` / `label` / `fill_level` 3개 클래스의 존재 여부 + 위치(IoU 기반)**.
+> OK/NG 판정 로직의 입력은 **`cap` / `label` / `fill_level` 3개 클래스의 존재 여부 + 위치(IoU 기반)**.
 
 ### 실제 환경 검증 결과 (정성 평가)
 

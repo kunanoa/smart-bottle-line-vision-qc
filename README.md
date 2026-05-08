@@ -41,13 +41,19 @@
 
 ## 🖥 실행 화면
 
-![Station 1 통합 GUI](docs/screenshots/gui_station1_main.png)
+### Station 1 PatchCore — 정상/결함 판정 사례
 
-> Station 1 통합 GUI — 입고공정 페트병 NG 검출 사례. 좌측부터 입력 이미지 · Anomaly Map · Pred Mask · 결과 패널, 하단은 NG 이력 로그(Serial / 시각 / 점수 자동 기록). 「📦 Station 1」 섹션의 출력 형태를 그대로 반영.
+| 정상 페트병 (Score 0.2580) | 명확 결함 — sanity check 객체 (Score 1.0000) |
+|:---:|:---:|
+| <img src="docs/screenshots/station1_round1_normal.png" width="380"> | <img src="docs/screenshots/station1_round1_pairi.png" width="380"> |
+
+> Station 1 PatchCore의 출력 형태 — 입력 이미지 / Anomaly Map / Pred Mask 3분할로 구성. 좌측은 정상 페트병(점수 0.30 미만 → OK), 우측은 모델이 정상 분포에서 가장 멀리 벗어난 입력에 대해 어떻게 반응하는지 확인하기 위한 sanity check용 테스트 객체(점수 1.0 → NG). 임계값 0.5 기준 정상과 결함이 명확히 분리됨을 보여줌.
+
+### Station 2 YOLO — 라벨 정렬 NG 검출
 
 ![Station 2 라벨 정렬 NG](docs/screenshots/gui_station2_label_misalign.png)
 
-> Station 2 통합 GUI — 조립후공정의 라벨 정렬 NG 검출 사례. YOLO가 객체 자체는 검출하지만 **좌표 기반 정밀 판정**에서 카메라 각도 변동에 민감하게 반응한 케이스. 「🔍 도메인 갭 분석」 섹션의 Station 2 환경 의존성 패턴 참조.
+> Station 2 통합 GUI — 조립후공정의 라벨 정렬 NG 검출 사례. YOLO가 객체 자체는 검출하지만 좌표 기반 정밀 판정에서 카메라 각도 변동에 민감하게 반응한 케이스. 「🔍 도메인 갭 분석」 섹션의 Station 2 환경 의존성 패턴 참조.
 
 ---
 
@@ -165,13 +171,11 @@ data/station1/
 | 경미한 결함 (스크래치) | 0.66 ~ 0.78 | NG ✅ |
 | **흰색 종이뭉치 (실패한 3장)** | **0.3964 / 0.4047 / 0.4660** | **OK 오판 ❌** |
 
-#### PatchCore 출력 형태 — 점수 그라데이션
+#### 중간 결함 검출 사례 — 보드마카 (Score 0.6983)
 
-| 정상 (Score 0.2580) | 보드마카 NG (Score 0.6983) | 파이리 NG (Score 1.0000) |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/station1_round1_normal.png" width="280"> | <img src="docs/screenshots/station1_round1_boardmarker.png" width="280"> | <img src="docs/screenshots/station1_round1_pairi.png" width="280"> |
+![보드마카 검출](docs/screenshots/station1_round1_boardmarker.png)
 
-> 각 출력은 **Image · Image+Anomaly Map · Image+Pred Mask** 3분할로 구성. 점수 0.30 미만은 OK, 0.5 이상은 NG로 판정. 우측 파이리 인형은 모델이 정상 분포에서 가장 멀리 벗어난 입력에 대해 어떻게 반응하는지 확인하기 위한 sanity check 용 테스트 객체로, 점수가 정확히 1.0을 기록하며 모델 동작이 의도대로임을 검증.
+> 페트병 표면에 의도적으로 그린 보드마카 결함이 anomaly map의 빨간 영역으로 정확히 검출됨. 점수 0.6983으로 임계값 0.5를 충분히 상회하여 NG 판정. 「🖥 실행 화면」의 정상(0.2580) → 보드마카(0.6983) → 파이리(1.0000)로 이어지는 점수 그라데이션이 모델 동작의 일관성을 보여줌.
 
 #### 1회차 미검 사례 — 흰색 종이뭉치 (Score 0.4660)
 

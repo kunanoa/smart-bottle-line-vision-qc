@@ -1,0 +1,15 @@
+{
+  "threshold": 39.5661,
+  "f1_score": 0.7027,
+  "auto_detected": true,
+  "normal_count": 120,
+  "abnormal_count": 20,
+  "normal_score_range": [
+    31.2118,
+    47.5457
+  ],
+  "abnormal_score_range": [
+    36.3829,
+    49.1515
+  ]
+}

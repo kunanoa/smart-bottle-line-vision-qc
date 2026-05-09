@@ -1,0 +1,266 @@
+﻿// ============================================================================
+// PageHome.cpp — 종합 현황 (Home) 대시보드 페이지
+// ============================================================================
+// 책임:
+//   MainTabDlg 가 PushUpdate() 호출 시 InspectionRecord 컬렉션을 받아
+//   종합 통계를 계산/표시. 실시간 NG 이벤트가 들어올 때마다 카운트/불량률 갱신.
+//
+// 표시 항목:
+//   - 전체 OK/NG 카운트 + 불량률(%)
+//   - Station1(입고) / Station2(조립) 개별 OK/NG
+//   - 최근 NG 이력 리스트 (최근 N건)
+//
+// 데이터 원천:
+//   초기 로드 — STATS_REQ(130) 응답으로 누적 수치 수신
+//   실시간   — INSPECT_NG_PUSH(110), INSPECT_OK_COUNT_PUSH(112) 로 증분 갱신
+//   이력     — INSPECT_HISTORY_REQ(114) 응답으로 NG 로그 테이블 채움
+// ============================================================================
+
+#include "pch.h"
+#include "PageHome.h"
+#include "NetworkClient.h"
+#include "PacketBuilder.h"   // ExtractInt/String/Double/Bool
+
+IMPLEMENT_DYNAMIC(CPageHome, CDialogEx)
+BEGIN_MESSAGE_MAP(CPageHome, CDialogEx)
+    ON_WM_PAINT()
+    ON_WM_ERASEBKGND()  // v0.16.0: 깜발임 방지
+    // v0.14.6: NG 리스트 더블클릭 → 이미지 요청
+    // v0.16.0: ON_NOTIFY removed
+END_MESSAGE_MAP()
+
+CPageHome::CPageHome(CWnd* p) : CDialogEx(IDD_PAGE_HOME, p) {}
+
+void CPageHome::DoDataExchange(CDataExchange* pDX)
+{
+    CDialogEx::DoDataExchange(pDX);
+    // NG 이력 리스트 컨트롤 바인딩
+    DDX_Control(pDX, IDC_LIST_NG, m_listNG);
+}
+
+BOOL CPageHome::OnInitDialog()
+{
+    CDialogEx::OnInitDialog();
+
+    // v0.16.0: CNgHistoryList 는 자체 렌더링 — 별도 초기화 불필요
+    // (검정 배경, 행 높이 자체 관리, 깜발임 없음)
+
+    return TRUE;
+}
+
+// ============================================================================
+// Update — 검사 데이터 갱신
+// ============================================================================
+// 파라미터: recs — 전체 검사 이력 (최대 50건)
+// 동작:
+//   1) 종합 통계 계산 및 표시
+//   2) 스테이션별 통계 계산 및 표시 (목업 대비 추가)
+//   3) NG 이력 리스트 갱신
+// v0.14.7: Summary 값은 **누적 카운터(m_cumOk/m_cumNg)** 기반으로만 찍힌다.
+//   로그인 직후 ApplyStatsRes 가 DB 절대값을 세팅하고,
+//   이후엔 OK_COUNT_PUSH / NG_PUSH 가 증분을 반영 → RefreshSummary 호출로 재그림.
+//   Update(recs) 는 이제 Summary 를 건드리지 않음 — 50건 cap 문제 해소.
+void CPageHome::Update(const std::vector<InspectionRecord>& /*recs*/)
+{
+    // Summary 는 RefreshSummary 에서 담당. 여기선 모델 정보만.
+    auto set = [&](int id, CString v) {
+        CWnd* w = GetDlgItem(id);
+        if (w) w->SetWindowText(v);
+    };
+    set(IDC_STATIC_S1_MODEL_INFO, _T("모델: PatchCore v1.2.0 | Latency: ~52ms"));
+    set(IDC_STATIC_S2_MODEL_INFO, _T("모델: YOLO11 v1.0.0 + PatchCore v1.1.0"));
+
+    // 누적 카운터로 Summary/스테이션 박스 다시 그림
+    RefreshSummary();
+}
+
+void CPageHome::UpdateStationCount(int stationId, int okCount, int ngCount)
+{
+    // v0.14.7: 서버 절대값으로 덮어쓰기 — OK_COUNT_PUSH(112) 는 누적 카운트.
+    if (stationId == 1 || stationId == 2) {
+        m_cumOk[stationId] = okCount;
+        m_cumNg[stationId] = ngCount;
+    }
+    RefreshSummary();
+}
+
+// v0.14.7: 클라 시작 이후 "현재까지의 누적 수치"로 Summary + 스테이션 박스 갱신.
+void CPageHome::RefreshSummary()
+{
+    auto set = [&](int id, CString v) {
+        CWnd* w = GetDlgItem(id);
+        if (w) w->SetWindowText(v);
+    };
+    CString s;
+
+    // ── 스테이션별 박스 ──
+    s.Format(_T("%d"), m_cumOk[1]);  set(IDC_STATIC_S1_OK, s);
+    s.Format(_T("%d"), m_cumNg[1]);  set(IDC_STATIC_S1_NG, s);
+    s.Format(_T("%d"), m_cumOk[2]);  set(IDC_STATIC_S2_OK, s);
+    s.Format(_T("%d"), m_cumNg[2]);  set(IDC_STATIC_S2_NG, s);
+
+    // ── 종합 Summary (Total / OK / NG / Defect Rate) ──
+    int ok    = m_cumOk[1] + m_cumOk[2];
+    int ng    = m_cumNg[1] + m_cumNg[2];
+    int total = ok + ng;
+
+    s.Format(_T("%d"), total); set(IDC_STATIC_TOTAL, s);
+    s.Format(_T("%d"), ok);    set(IDC_STATIC_OK, s);
+    s.Format(_T("%d"), ng);    set(IDC_STATIC_NG, s);
+    s.Format(_T("%.2f%%"), total > 0 ? 100.0 * ng / total : 0.0);
+    set(IDC_STATIC_DEFECT_RATE, s);
+}
+
+// v0.14.7: 로그인 직후 STATS_RES(130) 응답으로 초기 누적값 세팅.
+//   서버 JSON 필드: total, ok_count, ng_count, s1_ok, s1_ng, s2_ok, s2_ng ...
+//   station 별 필드가 있으면 그걸 쓰고, 없으면 합계로 폴백.
+void CPageHome::ApplyStatsRes(const std::string& json)
+{
+    CStringA jsonA(json.c_str());
+    int s1Ok = CPacketBuilder::ExtractInt(jsonA, "s1_ok");
+    int s1Ng = CPacketBuilder::ExtractInt(jsonA, "s1_ng");
+    int s2Ok = CPacketBuilder::ExtractInt(jsonA, "s2_ok");
+    int s2Ng = CPacketBuilder::ExtractInt(jsonA, "s2_ng");
+    // station 필드가 비어있으면(구서버) 합계로 Station1 에 몰아넣기
+    if (s1Ok == 0 && s1Ng == 0 && s2Ok == 0 && s2Ng == 0) {
+        int total = CPacketBuilder::ExtractInt(jsonA, "total");
+        int okC   = CPacketBuilder::ExtractInt(jsonA, "ok_count");
+        int ngC   = CPacketBuilder::ExtractInt(jsonA, "ng_count");
+        if (total > 0 && okC == 0 && ngC == 0) {
+            ngC = CPacketBuilder::ExtractInt(jsonA, "ng");
+            okC = total - ngC;
+        }
+        s1Ok = okC; s1Ng = ngC;
+    }
+    m_cumOk[1] = s1Ok; m_cumNg[1] = s1Ng;
+    m_cumOk[2] = s2Ok; m_cumNg[2] = s2Ng;
+    RefreshSummary();
+}
+
+void CPageHome::OnPaint() { Default(); }
+
+// v0.16.0c: OnEraseBkgnd — IDC_LIST_NG 실제 픽셀 위치를 동적으로 읽어
+// Summary 영역(리스트 위)은 기본색, NG History 영역(리스트 포함 아래)은 검정으로 채움.
+// 하드코딩 y=66 제거 — Dialog Units ≠ 픽셀 이므로 런타임에 읽어야 정확함.
+BOOL CPageHome::OnEraseBkgnd(CDC* pDC)
+{
+    CRect rc;
+    GetClientRect(&rc);
+
+    // IDC_LIST_NG 컨트롤의 실제 픽셀 위치 취득
+    int ngTop = rc.top;  // 폴백: 리스트 못 찾으면 전체 검정
+    CWnd* pList = GetDlgItem(IDC_LIST_NG);
+    if (pList && pList->GetSafeHwnd()) {
+        CRect listRc;
+        pList->GetWindowRect(&listRc);
+        ScreenToClient(&listRc);
+        ngTop = listRc.top - 14;  // GroupBox 제목("NG History") 높이 여유분
+        if (ngTop < 0) ngTop = 0;
+    }
+
+    // 1) Summary 영역 (y=0 ~ ngTop) — 기본 배경색
+    CRect summaryArea(rc.left, rc.top, rc.right, ngTop);
+    pDC->FillSolidRect(&summaryArea, ::GetSysColor(COLOR_BTNFACE));
+
+    // 2) NG History 영역 (y=ngTop ~ 끝) — 검정
+    CRect ngArea(rc.left, ngTop, rc.right, rc.bottom);
+    pDC->FillSolidRect(&ngArea, RGB(18, 18, 18));
+
+    return TRUE;
+}
+
+// ============================================================================
+// InsertNgItem — NG 레코드 1건을 리스트 지정 row 에 삽입 (v0.13.2)
+// ============================================================================
+// InsertNgItem — v0.16.0: CNgHistoryList.AddEntry() 로 전환
+// ============================================================================
+void CPageHome::InsertNgItem(int /*row*/, const InspectionRecord& r)
+{
+    static const std::vector<BYTE> empty;
+    m_listNG.AddEntry(r.id, r.station, r.score, r.time, empty, empty, empty);
+}
+// ============================================================================
+// 접속 직후 MainTabDlg 가 INSPECT_HISTORY_REQ 를 보내면 서버가 응답으로 items
+// 배열을 돌려준다. 여기서는 items 중 result=="ng" 만 뽑아 최신순으로 리스트에
+// 채운다 (최대 MAX_NG_ROWS 건). 스크롤은 MFC CListCtrl 이 자동 처리.
+void CPageHome::OnInspectHistoryRes(const std::string& json)
+{
+    CStringA jsonA(json.c_str());
+
+    // JSON 안의 items 배열만 추출 (1-depth 플랫 파서라 배열 통째로 자름).
+    int arrStart = jsonA.Find("\"items\"");
+    if (arrStart < 0) return;
+    int arrS = jsonA.Find('[', arrStart);
+    int arrE = jsonA.Find(']', arrS);
+    if (arrS < 0 || arrE < 0) return;
+
+    CStringA arr = jsonA.Mid(arrS + 1, arrE - arrS - 1);
+
+    m_listNG.Clear();  // v0.16.0: CNgHistoryList
+    int row = 0;
+    int pos = 0;
+    while (pos < arr.GetLength() && row < MAX_NG_ROWS) {
+        int os = arr.Find('{', pos);
+        int oe = arr.Find('}', os);
+        if (os < 0 || oe < 0) break;
+
+        CStringA obj = arr.Mid(os, oe - os + 1);
+
+        // 결과 필터 — NG(=ng) 만 표시. OK 는 건너뜀.
+        CString resultStr = CPacketBuilder::ExtractStringW(obj, "result");
+        resultStr.MakeLower();
+        if (resultStr != _T("ng")) {
+            pos = oe + 1;
+            continue;
+        }
+
+        InspectionRecord r;
+        r.id        = CPacketBuilder::ExtractInt(obj, "id");
+        r.station   = CPacketBuilder::ExtractInt(obj, "station_id");
+        r.isNG      = true;
+        r.score     = CPacketBuilder::ExtractDouble(obj, "confidence");
+        r.latencyMs = CPacketBuilder::ExtractInt(obj, "latency_ms");
+
+        // timestamp 는 "YYYY-MM-DD HH:MM:SS" 형식 — 시:분:초 부분만 뽑아 표시
+        CString ts = CPacketBuilder::ExtractStringW(obj, "timestamp");
+        int sp = ts.Find(_T(' '));
+        r.time = (sp >= 0 && ts.GetLength() - sp >= 9)
+                 ? ts.Mid(sp + 1, 8)
+                 : ts;
+
+        // defect_type 문자열 → EDefect 매핑 (UI 표시용)
+        CString defectStr = CPacketBuilder::ExtractStringW(obj, "defect_type");
+        defectStr.MakeLower();
+        if      (defectStr.Find(_T("cap"))    >= 0) r.defect = EDefect::CapLoose;
+        else if (defectStr.Find(_T("label"))  >= 0) r.defect = EDefect::LabelTilt;
+        else if (defectStr.Find(_T("fill"))   >= 0) r.defect = EDefect::FillLow;
+        else if (defectStr.IsEmpty())               r.defect = EDefect::None;
+        else                                        r.defect = EDefect::Anomaly;
+
+        InsertNgItem(row, r);
+        ++row;
+        pos = oe + 1;
+    }
+
+    TRACE(_T("[PageHome] DB NG 이력 로드: %d건\n"), row);
+}
+
+// ============================================================================
+// AddNgRow — 실시간 NG_PUSH 수신 → 리스트 맨 위에 1건 prepend (v0.13.2)
+// ============================================================================
+// 상한 MAX_NG_ROWS 초과 시 가장 오래된 행(맨 아래) 자동 제거.
+void CPageHome::AddNgRow(const InspectionRecord& r)
+{
+    if (!r.isNG) return;
+    InsertNgItem(0, r);  // v0.16.0: CNgHistoryList 내부에서 상한/스크롤 자체 관리
+
+    // v0.16.0: ++m_cumNg 제거 — OK_COUNT_PUSH(112) 가 5초마다 서버 절대값으로
+    //   덮어쓰므로 여기서 증분하면 Total 폭증 버그 발생.
+}
+
+// ============================================================================
+// OnLvnDoubleClickNgList (v0.14.6) — 더블클릭 → 해당 NG 이미지 로드 + 탭 전환
+// ============================================================================
+// 흐름:
+// v0.16.0: OnLvnDoubleClickNgList 제거
+// CNgHistoryList 는 CListCtrl 기반 GetItemText 를 지원하지 않으민, 더블클릭 이미지 요요양은 추후 구현 예정
